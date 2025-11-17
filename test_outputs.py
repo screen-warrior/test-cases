@@ -1,12 +1,12 @@
 """
 Test Output validation and formatting
-Focus: All, IPv4Only, IPv6Only, IPv4Any output types and string formatting
+Focus: All, IPv4Only, IPv6Only, IPvAny output types and string formatting
 """
 
 import pytest
 from ipaddress import IPv4Network, IPv6Network
 
-from fwdev_edl_server.models.outputs import All, IPv4Only, IPv6Only, IPv4Any
+from fwdev_edl_server.models.outputs import All, IPv4Only, IPv6Only, IPvAny
 
 
 class TestAllOutput:
@@ -255,12 +255,12 @@ class TestIPv6OnlyOutput:
         assert result == ""
 
 
-class TestIPv4AnyOutput:
-    """Test IPv4Any output type (both IPv4 and IPv6)"""
+class TestIPvAnyOutput:
+    """Test IPvAny output type (both IPv4 and IPv6)"""
 
-    def test_ipv4_any_includes_both(self):
-        """Test IPv4Any includes both IPv4 and IPv6"""
-        output = IPv4Any(type="ip")
+    def test_ipvany_includes_both(self):
+        """Test IPvAny includes both IPv4 and IPv6"""
+        output = IPvAny(type="ip")
 
         values = [
             IPv4Network("192.168.1.0/24"),
@@ -279,9 +279,9 @@ class TestIPv4AnyOutput:
         # Should NOT have strings
         assert "example.com" not in result
 
-    def test_ipv4_any_sorted(self):
-        """Test IPv4Any output is sorted"""
-        output = IPv4Any(type="ip")
+    def test_ipvany_sorted(self):
+        """Test IPvAny output is sorted"""
+        output = IPvAny(type="ip")
 
         values = [
             IPv4Network("10.0.0.0/8"),
@@ -296,9 +296,9 @@ class TestIPv4AnyOutput:
         assert "10.0.0.0/8" in result
         assert "2001:db8::/32" in result
 
-    def test_ipv4_any_empty(self):
-        """Test IPv4Any with no IP addresses"""
-        output = IPv4Any(type="ip")
+    def test_ipvany_empty(self):
+        """Test IPvAny with no IP addresses"""
+        output = IPvAny(type="ip")
 
         values = ["example.com", "test.org"]
 
@@ -325,9 +325,9 @@ class TestOutputTypes:
         output = IPv6Only(type="ipv6")
         assert output.type == "ipv6"
 
-    def test_ipv4_any_type_literal(self):
-        """Test IPv4Any has correct type literal"""
-        output = IPv4Any(type="ip")
+    def test_ipvany_type_literal(self):
+        """Test IPvAny has correct type literal"""
+        output = IPvAny(type="ip")
         assert output.type == "ip"
 
     def test_output_has_id(self):
