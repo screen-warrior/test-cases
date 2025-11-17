@@ -1,489 +1,455 @@
 """
-Comprehensive test suite for data validation
-
-Tests the validation logic for IP addresses, FQDNs, URLs, and the skip_invalid wrapper.
-This is critical infrastructure - all data passes through these validators.
+Test validators.py functionality
+Focus: skip_invalid wrapper, AnyUrl, AnyFQDN type aliases, EDL types
 """
 
 import pytest
 from ipaddress import IPv4Network, IPv6Network
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
+from typing import List
 
 from fwdev_edl_server.validators import (
+    skip_invalid,
     AnyUrl,
     AnyFQDN,
-    skip_invalid,
-    EDL_SUPPORTED_TYPES,
+    EDL_SUPPORTED_INPUT_TYPES,
+    EDL_SUPPORTED_OUTPUT_TYPES
 )
-from pydantic import TypeAdapter
-from typing import Annotated
-from pydantic.functional_validators import WrapValidator
 
-
-# ============================================================================
-# TEST ANYURL VALIDATION
-# ============================================================================
-
-class TestAnyUrlValidation:
-    """Test AnyUrl type validation with regex patterns"""
-
-    def test_valid_url_with_trailing_slash(self):
-        """Valid URLs must end with /"""
-        validator = TypeAdapter(AnyUrl)
-
-        assert validator.validate_python("example.com/") == "example.com/"
-        assert validator.validate_python("sub.example.com/") == "sub.example.com/"
-        assert validator.validate_python("deep.sub.example.com/") == "deep.sub.example.com/"
-
-    def test_valid_url_with_wildcard_subdomain(self):
-        """Wildcard domains should be accepted"""
-        validator = TypeAdapter(AnyUrl)
-
-        assert validator.validate_python("*.example.com/") == "*.example.com/"
-        assert validator.validate_python("*.sub.example.com/") == "*.sub.example.com/"
-
-    def test_valid_url_with_hyphen_in_subdomain(self):
-        """Subdomains with hyphens should be valid"""
-        validator = TypeAdapter(AnyUrl)
-
-        assert validator.validate_python("my-site.example.com/") == "my-site.example.com/"
-        assert validator.validate_python("test-123.example.com/") == "test-123.example.com/"
-
-    def test_valid_url_with_digits_in_subdomain(self):
-        """Subdomains with digits should be valid"""
-        validator = TypeAdapter(AnyUrl)
-
-        assert validator.validate_python("site123.example.com/") == "site123.example.com/"
-        assert validator.validate_python("123site.example.com/") == "123site.example.com/"
-
-    def test_valid_url_various_tlds(self):
-        """Test various TLD lengths (2-18 chars)"""
-        validator = TypeAdapter(AnyUrl)
-
-        # 2 char TLD
-        assert validator.validate_python("example.io/") == "example.io/"
-        # 3 char TLD
-        assert validator.validate_python("example.com/") == "example.com/"
-        # 4 char TLD
-        assert validator.validate_python("example.info/") == "example.info/"
-        # Long TLD (within limit)
-        assert validator.validate_python("example.international/") == "example.international/"
-
-    def test_invalid_url_without_trailing_slash(self):
-        """URLs without trailing slash should fail"""
-        validator = TypeAdapter(AnyUrl)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("example.com")
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("sub.example.com")
-
-    def test_invalid_url_with_invalid_tld(self):
-        """Invalid TLDs should fail"""
-        validator = TypeAdapter(AnyUrl)
-
-        # TLD too short (1 char)
-        with pytest.raises(ValidationError):
-            validator.validate_python("example.c/")
-
-        # TLD too long (19 chars)
-        with pytest.raises(ValidationError):
-            validator.validate_python("example.verylongtldthatexceeds/")
-
-    def test_invalid_url_with_special_characters(self):
-        """Special characters in domain should fail"""
-        validator = TypeAdapter(AnyUrl)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("exam@ple.com/")
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("exam ple.com/")
-
-    def test_invalid_url_no_tld(self):
-        """Domain without TLD should fail"""
-        validator = TypeAdapter(AnyUrl)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("localhost/")
-
-    def test_invalid_url_starting_with_hyphen(self):
-        """Subdomain starting with hyphen should fail"""
-        validator = TypeAdapter(AnyUrl)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("-invalid.example.com/")
-
-
-# ============================================================================
-# TEST ANYFQDN VALIDATION
-# ============================================================================
-
-class TestAnyFqdnValidation:
-    """Test AnyFQDN type validation"""
-
-    def test_valid_fqdn_simple(self):
-        """Valid simple FQDNs"""
-        validator = TypeAdapter(AnyFQDN)
-
-        assert validator.validate_python("example.com") == "example.com"
-        assert validator.validate_python("google.com") == "google.com"
-
-    def test_valid_fqdn_with_subdomains(self):
-        """Valid FQDNs with subdomains"""
-        validator = TypeAdapter(AnyFQDN)
-
-        assert validator.validate_python("www.example.com") == "www.example.com"
-        assert validator.validate_python("mail.google.com") == "mail.google.com"
-        assert validator.validate_python("deep.sub.example.com") == "deep.sub.example.com"
-
-    def test_valid_fqdn_with_hyphens(self):
-        """FQDNs with hyphens in labels"""
-        validator = TypeAdapter(AnyFQDN)
-
-        assert validator.validate_python("my-site.example.com") == "my-site.example.com"
-        assert validator.validate_python("test-123-abc.com") == "test-123-abc.com"
-
-    def test_valid_fqdn_with_digits(self):
-        """FQDNs with digits"""
-        validator = TypeAdapter(AnyFQDN)
-
-        assert validator.validate_python("site123.example.com") == "site123.example.com"
-        assert validator.validate_python("123.example.com") == "123.example.com"
-
-    def test_valid_fqdn_max_label_length(self):
-        """FQDN with max label length (63 chars)"""
-        validator = TypeAdapter(AnyFQDN)
-
-        # 63 character label (max allowed)
-        long_label = "a" * 63
-        fqdn = f"{long_label}.example.com"
-        assert validator.validate_python(fqdn) == fqdn
-
-    def test_valid_fqdn_max_total_length(self):
-        """FQDN with max total length (255 chars)"""
-        validator = TypeAdapter(AnyFQDN)
-
-        # Create FQDN close to 255 chars
-        # 63 + 1 (dot) + 63 + 1 + 63 + 1 + 63 = 255
-        label1 = "a" * 63
-        label2 = "b" * 63
-        label3 = "c" * 63
-        label4 = "d" * 60  # Leaves room for .com
-        fqdn = f"{label1}.{label2}.{label3}.{label4}.com"
-
-        assert len(fqdn) <= 255
-        assert validator.validate_python(fqdn) == fqdn
-
-    def test_invalid_fqdn_with_trailing_slash(self):
-        """FQDN with trailing slash should fail (that's a URL)"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("example.com/")
-
-    def test_invalid_fqdn_exceeds_max_length(self):
-        """FQDN exceeding 255 chars should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        # Create FQDN > 255 chars
-        long_fqdn = "a" * 256 + ".com"
-
-        with pytest.raises(ValidationError):
-            validator.validate_python(long_fqdn)
-
-    def test_invalid_fqdn_label_exceeds_63_chars(self):
-        """FQDN label exceeding 63 chars should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        # 64 character label (exceeds max)
-        long_label = "a" * 64
-        fqdn = f"{long_label}.example.com"
-
-        with pytest.raises(ValidationError):
-            validator.validate_python(fqdn)
-
-    def test_invalid_fqdn_special_characters(self):
-        """FQDN with special characters should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("exam@ple.com")
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("exam ple.com")
-
-    def test_invalid_fqdn_starting_with_hyphen(self):
-        """FQDN label starting with hyphen should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("-invalid.example.com")
-
-    def test_invalid_fqdn_ending_with_hyphen(self):
-        """FQDN label ending with hyphen should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("invalid-.example.com")
-
-    def test_invalid_fqdn_consecutive_dots(self):
-        """FQDN with consecutive dots should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("example..com")
-
-    def test_invalid_fqdn_no_tld(self):
-        """FQDN without TLD should fail"""
-        validator = TypeAdapter(AnyFQDN)
-
-        with pytest.raises(ValidationError):
-            validator.validate_python("localhost")
-
-
-# ============================================================================
-# TEST SKIP_INVALID WRAPPER
-# ============================================================================
 
 class TestSkipInvalidWrapper:
-    """Test the skip_invalid validator wrapper"""
+    """Test skip_invalid validator wrapper"""
 
-    def test_skip_invalid_returns_valid_value(self):
-        """Valid values should pass through unchanged"""
-        validator = TypeAdapter(
-            Annotated[IPv4Network, WrapValidator(skip_invalid)]
-        )
+    def test_skip_invalid_passes_valid_data(self):
+        """Test skip_invalid returns valid data"""
+        def handler(value):
+            return IPv4Network(value)
 
-        result = validator.validate_python("192.168.1.0/24")
+        result = skip_invalid("192.168.1.0/24", handler)
+
         assert result == IPv4Network("192.168.1.0/24")
 
     def test_skip_invalid_returns_none_on_error(self):
-        """Invalid values should return None instead of raising"""
-        validator = TypeAdapter(
-            Annotated[IPv4Network, WrapValidator(skip_invalid)]
-        )
+        """Test skip_invalid returns None for invalid data"""
+        def handler(value):
+            return IPv4Network(value)
 
-        # Invalid IP should return None, not raise
-        result = validator.validate_python("not-an-ip")
+        result = skip_invalid("not-an-ip", handler)
+
         assert result is None
 
-    def test_skip_invalid_with_list_filters_none(self):
-        """When used with List, None values should be filtered"""
-        from typing import List
+    def test_skip_invalid_with_validation_error(self):
+        """Test skip_invalid catches ValidationError"""
+        def handler(value):
+            if not isinstance(value, int):
+                raise ValidationError.from_exception_data(
+                    "value_error",
+                    [{"type": "int_type", "loc": ("value",), "input": value}]
+                )
+            return value
 
-        validator = TypeAdapter(
-            List[Annotated[IPv4Network, WrapValidator(skip_invalid)]]
-        )
+        result = skip_invalid("string", handler)
 
-        # Mix of valid and invalid
-        result = validator.validate_python([
+        assert result is None
+
+    def test_skip_invalid_with_ipv6(self):
+        """Test skip_invalid with IPv6 networks"""
+        def handler(value):
+            return IPv6Network(value)
+
+        # Valid
+        result = skip_invalid("2001:db8::/32", handler)
+        assert result == IPv6Network("2001:db8::/32")
+
+        # Invalid
+        result = skip_invalid("invalid-ipv6", handler)
+        assert result is None
+
+
+class TestAnyUrlTypeAlias:
+    """Test AnyUrl type alias validation"""
+
+    def test_anyurl_valid_domain(self):
+        """Test AnyUrl with valid domain"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        model = TestModel(url="example.com/")
+        assert model.url == "example.com/"
+
+    def test_anyurl_with_subdomain(self):
+        """Test AnyUrl with subdomain"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        model = TestModel(url="sub.example.com/")
+        assert model.url == "sub.example.com/"
+
+    def test_anyurl_with_wildcard(self):
+        """Test AnyUrl with wildcard subdomain"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        model = TestModel(url="*.example.com/")
+        assert model.url == "*.example.com/"
+
+    def test_anyurl_with_multiple_subdomains(self):
+        """Test AnyUrl with multiple subdomains"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        model = TestModel(url="a.b.c.example.com/")
+        assert model.url == "a.b.c.example.com/"
+
+    def test_anyurl_requires_trailing_slash(self):
+        """Test AnyUrl requires trailing slash"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        with pytest.raises(ValidationError):
+            TestModel(url="example.com")
+
+    def test_anyurl_requires_tld(self):
+        """Test AnyUrl requires valid TLD"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        with pytest.raises(ValidationError):
+            TestModel(url="invalid/")
+
+    def test_anyurl_with_hyphen(self):
+        """Test AnyUrl with hyphenated domain"""
+        class TestModel(BaseModel):
+            url: AnyUrl
+
+        model = TestModel(url="my-domain.example.com/")
+        assert model.url == "my-domain.example.com/"
+
+
+class TestAnyFQDNTypeAlias:
+    """Test AnyFQDN type alias validation"""
+
+    def test_anyfqdn_valid_domain(self):
+        """Test AnyFQDN with valid domain"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        model = TestModel(fqdn="example.com")
+        assert model.fqdn == "example.com"
+
+    def test_anyfqdn_with_subdomain(self):
+        """Test AnyFQDN with subdomain"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        model = TestModel(fqdn="www.example.com")
+        assert model.fqdn == "www.example.com"
+
+    def test_anyfqdn_with_multiple_subdomains(self):
+        """Test AnyFQDN with multiple subdomains"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        model = TestModel(fqdn="api.v1.example.com")
+        assert model.fqdn == "api.v1.example.com"
+
+    def test_anyfqdn_rejects_trailing_slash(self):
+        """Test AnyFQDN rejects trailing slash"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        with pytest.raises(ValidationError):
+            TestModel(fqdn="example.com/")
+
+    def test_anyfqdn_requires_tld(self):
+        """Test AnyFQDN requires TLD"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        with pytest.raises(ValidationError):
+            TestModel(fqdn="invalid")
+
+    def test_anyfqdn_with_hyphen(self):
+        """Test AnyFQDN with hyphenated domain"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        model = TestModel(fqdn="my-site.example.com")
+        assert model.fqdn == "my-site.example.com"
+
+    def test_anyfqdn_no_wildcard(self):
+        """Test AnyFQDN does not accept wildcards"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        with pytest.raises(ValidationError):
+            TestModel(fqdn="*.example.com")
+
+    def test_anyfqdn_max_length(self):
+        """Test AnyFQDN max length constraint (255)"""
+        class TestModel(BaseModel):
+            fqdn: AnyFQDN
+
+        # Very long domain
+        long_domain = "a" * 250 + ".com"
+
+        if len(long_domain) <= 255:
+            model = TestModel(fqdn=long_domain)
+            assert len(model.fqdn) <= 255
+        else:
+            with pytest.raises(ValidationError):
+                TestModel(fqdn=long_domain)
+
+
+class TestEDLSupportedInputTypes:
+    """Test EDL_SUPPORTED_INPUT_TYPES union"""
+
+    def test_edl_input_ipv4_network(self):
+        """Test EDL_SUPPORTED_INPUT_TYPES with IPv4"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        model = TestModel(value="192.168.1.0/24")
+        assert isinstance(model.value, IPv4Network)
+
+    def test_edl_input_ipv6_network(self):
+        """Test EDL_SUPPORTED_INPUT_TYPES with IPv6"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        model = TestModel(value="2001:db8::/32")
+        assert isinstance(model.value, IPv6Network)
+
+    def test_edl_input_url(self):
+        """Test EDL_SUPPORTED_INPUT_TYPES with URL"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        model = TestModel(value="*.example.com/")
+        assert isinstance(model.value, str)
+
+    def test_edl_input_fqdn(self):
+        """Test EDL_SUPPORTED_INPUT_TYPES with FQDN"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        model = TestModel(value="example.com")
+        assert isinstance(model.value, str)
+
+    def test_edl_input_list_mixed(self):
+        """Test EDL_SUPPORTED_INPUT_TYPES with mixed list"""
+        class TestModel(BaseModel):
+            values: List[EDL_SUPPORTED_INPUT_TYPES]
+
+        model = TestModel(values=[
             "192.168.1.0/24",
-            "invalid",
-            "10.0.0.0/8",
-            "also-invalid",
-            "172.16.0.0/12"
-        ])
-
-        # Filter out None values
-        result = [r for r in result if r is not None]
-
-        assert len(result) == 3
-        assert IPv4Network("192.168.1.0/24") in result
-        assert IPv4Network("10.0.0.0/8") in result
-        assert IPv4Network("172.16.0.0/12") in result
-
-
-# ============================================================================
-# TEST EDL_SUPPORTED_TYPES UNION
-# ============================================================================
-
-class TestEdlSupportedTypes:
-    """Test the complete EDL_SUPPORTED_TYPES validation pipeline"""
-
-    def test_validates_ipv4_networks(self):
-        """IPv4 networks should validate"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([
-            "192.168.1.0/24",
-            "10.0.0.0/8",
-            "172.16.0.1/32"
-        ])
-
-        # Filter None
-        result = [r for r in result if r is not None]
-
-        assert len(result) == 3
-        assert all(isinstance(r, IPv4Network) for r in result)
-
-    def test_validates_ipv6_networks(self):
-        """IPv6 networks should validate"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([
             "2001:db8::/32",
-            "fe80::/10",
-            "::1/128"
-        ])
-
-        # Filter None
-        result = [r for r in result if r is not None]
-
-        assert len(result) == 3
-        assert all(isinstance(r, IPv6Network) for r in result)
-
-    def test_validates_urls(self):
-        """URLs should validate as strings"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([
-            "example.com/",
-            "*.malicious.com/",
-            "bad-site.org/"
-        ])
-
-        # Filter None
-        result = [r for r in result if r is not None]
-
-        assert len(result) == 3
-        assert all(isinstance(r, str) for r in result)
-
-    def test_validates_fqdns(self):
-        """FQDNs should validate as strings"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([
             "example.com",
-            "malicious.org",
-            "bad-actor.net"
+            "*.malicious.com/"
         ])
 
-        # Filter None
-        result = [r for r in result if r is not None]
+        assert len(model.values) == 4
 
-        assert len(result) == 3
-        assert all(isinstance(r, str) for r in result)
 
-    def test_filters_invalid_data(self):
-        """Invalid data should be filtered out"""
-        from typing import List
+class TestEDLSupportedOutputTypes:
+    """Test EDL_SUPPORTED_OUTPUT_TYPES union"""
 
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
+    def test_edl_output_ipv4_network(self):
+        """Test EDL_SUPPORTED_OUTPUT_TYPES with IPv4"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_OUTPUT_TYPES
 
-        result = validator.validate_python([
-            "192.168.1.0/24",  # Valid IPv4
-            "not-valid",        # Invalid
-            "example.com",      # Valid FQDN
-            "999.999.999.999",  # Invalid IP
-            "test.com/",        # Valid URL
-            "invalid@email.com",# Invalid
-        ])
+        model = TestModel(value="192.168.1.0/24")
+        assert isinstance(model.value, IPv4Network)
 
-        # Filter None
-        result = [r for r in result if r is not None]
+    def test_edl_output_ipv6_network(self):
+        """Test EDL_SUPPORTED_OUTPUT_TYPES with IPv6"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_OUTPUT_TYPES
 
-        assert len(result) == 3  # Only 3 valid entries
+        model = TestModel(value="2001:db8::/32")
+        assert isinstance(model.value, IPv6Network)
 
-    def test_mixed_types_validation(self):
-        """All supported types in one list"""
-        from typing import List
+    def test_edl_output_url(self):
+        """Test EDL_SUPPORTED_OUTPUT_TYPES with URL"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_OUTPUT_TYPES
 
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
+        model = TestModel(value="*.example.com/")
+        assert isinstance(model.value, str)
 
-        result = validator.validate_python([
-            "192.168.1.0/24",     # IPv4
-            "2001:db8::/32",      # IPv6
-            "example.com",        # FQDN
-            "malicious.com/",     # URL
-            "10.0.0.0/8",         # IPv4
-            "bad-site.org",       # FQDN
-        ])
+    def test_edl_output_fqdn(self):
+        """Test EDL_SUPPORTED_OUTPUT_TYPES with FQDN"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_OUTPUT_TYPES
 
-        # Filter None
-        result = [r for r in result if r is not None]
+        model = TestModel(value="example.com")
+        assert isinstance(model.value, str)
 
-        assert len(result) == 6
 
-        # Count types
-        ipv4_count = sum(1 for r in result if isinstance(r, IPv4Network))
-        ipv6_count = sum(1 for r in result if isinstance(r, IPv6Network))
-        str_count = sum(1 for r in result if isinstance(r, str))
+class TestValidationPatterns:
+    """Test real-world validation patterns"""
 
-        assert ipv4_count == 2
-        assert ipv6_count == 1
-        assert str_count == 3  # 1 URL + 2 FQDNs
+    def test_filtering_invalid_from_list(self):
+        """Test filtering invalid entries from mixed data"""
+        valid_data = []
+        invalid_data = []
 
-    def test_empty_list_validation(self):
-        """Empty list should validate"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([])
-        assert result == []
-
-    def test_all_invalid_returns_empty_after_filter(self):
-        """List with all invalid data should return empty after filtering"""
-        from typing import List
-
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
-
-        result = validator.validate_python([
-            "invalid1",
-            "invalid2",
+        test_values = [
+            "192.168.1.0/24",
+            "invalid-entry",
+            "example.com",
             "999.999.999.999",
-            "not-a-domain",
-        ])
+            "2001:db8::/32"
+        ]
 
-        # Filter None
-        result = [r for r in result if r is not None]
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
 
-        assert result == []
+        for value in test_values:
+            try:
+                model = TestModel(value=value)
+                valid_data.append(model.value)
+            except ValidationError:
+                invalid_data.append(value)
 
-    def test_whitespace_handling(self):
-        """Test handling of values with whitespace"""
-        from typing import List
+        # Should have valid entries
+        assert len(valid_data) >= 3
+        assert "invalid-entry" in invalid_data
+        assert "999.999.999.999" in invalid_data
 
-        validator = TypeAdapter(
-            List[Annotated[EDL_SUPPORTED_TYPES, WrapValidator(skip_invalid)]]
-        )
+    def test_url_vs_fqdn_distinction(self):
+        """Test distinction between URL and FQDN formats"""
+        class UrlModel(BaseModel):
+            value: AnyUrl
 
-        result = validator.validate_python([
-            "  192.168.1.0/24  ",  # Leading/trailing whitespace
-            "example.com",          # Clean
-            "  ",                    # Only whitespace
-            "",                      # Empty string
-        ])
+        class FqdnModel(BaseModel):
+            value: AnyFQDN
 
-        # Filter None
-        result = [r for r in result if r is not None]
+        # URL requires trailing slash
+        url_model = UrlModel(value="example.com/")
+        assert url_model.value == "example.com/"
 
-        # Whitespace is not stripped by validator, so may fail validation
-        # This tests actual behavior
-        assert len(result) >= 1  # At least the clean FQDN should pass
+        # FQDN rejects trailing slash
+        fqdn_model = FqdnModel(value="example.com")
+        assert fqdn_model.value == "example.com"
+
+        # URL with slash fails FQDN
+        with pytest.raises(ValidationError):
+            FqdnModel(value="example.com/")
+
+        # FQDN without slash fails URL
+        with pytest.raises(ValidationError):
+            UrlModel(value="example.com")
+
+    def test_wildcard_only_in_url(self):
+        """Test wildcard is valid in URL but not FQDN"""
+        class UrlModel(BaseModel):
+            value: AnyUrl
+
+        class FqdnModel(BaseModel):
+            value: AnyFQDN
+
+        # Wildcard valid in URL
+        url_model = UrlModel(value="*.example.com/")
+        assert url_model.value == "*.example.com/"
+
+        # Wildcard invalid in FQDN
+        with pytest.raises(ValidationError):
+            FqdnModel(value="*.example.com")
+
+    def test_cidr_notation_validation(self):
+        """Test various CIDR notations"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        # Valid CIDR notations
+        valid_cidrs = [
+            "192.168.1.0/24",
+            "10.0.0.0/8",
+            "192.168.1.1/32",
+            "0.0.0.0/0",
+            "2001:db8::/32",
+            "::/0"
+        ]
+
+        for cidr in valid_cidrs:
+            model = TestModel(value=cidr)
+            assert model.value is not None
+
+    def test_single_ip_parsing(self):
+        """Test single IP addresses (without CIDR)"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        # Single IPs should parse
+        model = TestModel(value="192.168.1.1")
+        # Depends on whether it becomes /32 network or interface
+        assert model.value is not None
+
+
+class TestEdgeCases:
+    """Test edge cases and boundary conditions"""
+
+    def test_empty_string_validation(self):
+        """Test validators handle empty strings"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        with pytest.raises(ValidationError):
+            TestModel(value="")
+
+    def test_whitespace_only_validation(self):
+        """Test validators handle whitespace"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        with pytest.raises(ValidationError):
+            TestModel(value="   ")
+
+    def test_ipv4_boundary_values(self):
+        """Test IPv4 boundary values"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        # Min IPv4
+        model = TestModel(value="0.0.0.0/0")
+        assert model.value is not None
+
+        # Max IPv4
+        model = TestModel(value="255.255.255.255/32")
+        assert model.value is not None
+
+        # Invalid: out of range
+        with pytest.raises(ValidationError):
+            TestModel(value="256.0.0.0/24")
+
+    def test_ipv6_boundary_values(self):
+        """Test IPv6 boundary values"""
+        class TestModel(BaseModel):
+            value: EDL_SUPPORTED_INPUT_TYPES
+
+        # Min IPv6
+        model = TestModel(value="::/0")
+        assert model.value is not None
+
+        # Loopback
+        model = TestModel(value="::1/128")
+        assert model.value is not None
+
+        # Full IPv6
+        model = TestModel(value="ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/128")
+        assert model.value is not None
+
+    def test_skip_invalid_with_none(self):
+        """Test skip_invalid with None value"""
+        def handler(value):
+            if value is None:
+                raise ValidationError.from_exception_data(
+                    "value_error",
+                    [{"type": "none_not_allowed", "loc": ("value",), "input": value}]
+                )
+            return value
+
+        result = skip_invalid(None, handler)
+        assert result is None

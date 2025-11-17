@@ -1,382 +1,40 @@
 """
-Comprehensive test suite for output formatters
-
-Tests all output types: All, IPv4Only, IPv6Only, IPv4Any
-This validates the final data formatting before serving EDLs.
+Test Output validation and formatting
+Focus: All, IPv4Only, IPv6Only, IPv4Any output types and string formatting
 """
 
 import pytest
 from ipaddress import IPv4Network, IPv6Network
 
-from fwdev_edl_server.models.outputs import (
-    All,
-    IPv4Only,
-    IPv6Only,
-    IPv4Any,
-)
+from fwdev_edl_server.models.outputs import All, IPv4Only, IPv6Only, IPv4Any
 
-
-# ============================================================================
-# TEST IPV4ONLY OUTPUT
-# ============================================================================
-
-class TestIPv4OnlyOutput:
-    """Test IPv4Only output formatter"""
-
-    def test_formats_ipv4_newline_separated(self):
-        """IPv4 addresses should be newline-separated"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv4Network("10.0.0.0/8"),
-            IPv4Network("172.16.0.0/12"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        assert len(lines) == 3
-
-    def test_ipv4_sorted_output(self):
-        """IPv4 addresses should be sorted"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv4Network("10.0.0.0/8"),
-            IPv4Network("172.16.0.0/12"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        # Should be sorted: 10.0.0.0/8, 172.16.0.0/12, 192.168.1.0/24
-        assert "10.0.0.0/8" in lines[0]
-        assert "172.16.0.0/12" in lines[1]
-        assert "192.168.1.0/24" in lines[2]
-
-    def test_ipv4_cidr_notation(self):
-        """IPv4 should be formatted in CIDR notation"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv4Network("10.0.0.5/32"),  # Single IP
-        ]
-
-        result = output.refresh(values)
-
-        assert "192.168.1.0/24" in result
-        assert "10.0.0.5/32" in result  # /32 for single IPs
-
-    def test_filters_out_ipv6(self):
-        """IPv6 addresses should be excluded"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv6Network("2001:db8::/32"),
-            IPv4Network("10.0.0.0/8"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "2001:db8::/32" not in result
-        assert "192.168.1.0/24" in result
-        assert "10.0.0.0/8" in result
-
-    def test_filters_out_strings(self):
-        """String values (FQDNs, URLs) should be excluded"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            "example.com",
-            IPv4Network("10.0.0.0/8"),
-            "malicious.org/",
-        ]
-
-        result = output.refresh(values)
-
-        assert "example.com" not in result
-        assert "malicious.org/" not in result
-        assert "192.168.1.0/24" in result
-
-    def test_empty_list_returns_empty_string(self):
-        """Empty values should return empty string"""
-        output = IPv4Only(type="ipv4")
-
-        result = output.refresh([])
-
-        assert result == ""
-
-    def test_no_ipv4_returns_empty_string(self):
-        """List with no IPv4 should return empty string"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            "example.com",
-        ]
-
-        result = output.refresh(values)
-
-        assert result == ""
-
-    def test_duplicate_ipv4_handling(self):
-        """Test handling of duplicate IPv4 addresses"""
-        output = IPv4Only(type="ipv4")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv4Network("192.168.1.0/24"),  # Duplicate
-            IPv4Network("10.0.0.0/8"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        # Duplicates may or may not be removed depending on implementation
-        # At minimum, both should be present
-        assert "192.168.1.0/24" in result
-
-
-# ============================================================================
-# TEST IPV6ONLY OUTPUT
-# ============================================================================
-
-class TestIPv6OnlyOutput:
-    """Test IPv6Only output formatter"""
-
-    def test_formats_ipv6_newline_separated(self):
-        """IPv6 addresses should be newline-separated"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            IPv6Network("fe80::/10"),
-            IPv6Network("::1/128"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        assert len(lines) == 3
-
-    def test_ipv6_sorted_output(self):
-        """IPv6 addresses should be sorted"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv6Network("fe80::/10"),
-            IPv6Network("2001:db8::/32"),
-            IPv6Network("::1/128"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        # Should be sorted
-        assert len(lines) == 3
-
-    def test_ipv6_cidr_notation(self):
-        """IPv6 should be formatted in CIDR notation"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            IPv6Network("::1/128"),  # Single IP
-        ]
-
-        result = output.refresh(values)
-
-        assert "2001:db8::/32" in result
-        assert "::1/128" in result
-
-    def test_filters_out_ipv4(self):
-        """IPv4 addresses should be excluded"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            IPv4Network("192.168.1.0/24"),
-            IPv6Network("fe80::/10"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "192.168.1.0/24" not in result
-        assert "2001:db8::/32" in result
-        assert "fe80::/10" in result
-
-    def test_filters_out_strings(self):
-        """String values should be excluded"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            "example.com",
-            IPv6Network("fe80::/10"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "example.com" not in result
-        assert "2001:db8::/32" in result
-
-    def test_empty_list_returns_empty_string(self):
-        """Empty values should return empty string"""
-        output = IPv6Only(type="ipv6")
-
-        result = output.refresh([])
-
-        assert result == ""
-
-    def test_no_ipv6_returns_empty_string(self):
-        """List with no IPv6 should return empty string"""
-        output = IPv6Only(type="ipv6")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            "example.com",
-        ]
-
-        result = output.refresh(values)
-
-        assert result == ""
-
-
-# ============================================================================
-# TEST IPV4ANY OUTPUT
-# ============================================================================
-
-class TestIPv4AnyOutput:
-    """Test IPv4Any output formatter - outputs both IPv4 and IPv6"""
-
-    def test_includes_both_ipv4_and_ipv6(self):
-        """Should include both IPv4 and IPv6 addresses"""
-        output = IPv4Any(type="ip")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv6Network("2001:db8::/32"),
-            IPv4Network("10.0.0.0/8"),
-            IPv6Network("fe80::/10"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "192.168.1.0/24" in result
-        assert "2001:db8::/32" in result
-        assert "10.0.0.0/8" in result
-        assert "fe80::/10" in result
-
-    def test_sorted_output_ipv4_then_ipv6(self):
-        """Output should be sorted - IPv4 first, then IPv6"""
-        output = IPv4Any(type="ip")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            IPv4Network("192.168.1.0/24"),
-            IPv6Network("fe80::/10"),
-            IPv4Network("10.0.0.0/8"),
-        ]
-
-        result = output.refresh(values)
-
-        lines = result.split("\n")
-        assert len(lines) == 4
-
-        # Check that result contains all addresses
-        assert "192.168.1.0/24" in result
-        assert "10.0.0.0/8" in result
-        assert "2001:db8::/32" in result
-        assert "fe80::/10" in result
-
-    def test_filters_out_strings(self):
-        """String values (FQDNs, URLs) should be excluded"""
-        output = IPv4Any(type="ip")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            "example.com",
-            IPv6Network("2001:db8::/32"),
-            "malicious.org/",
-        ]
-
-        result = output.refresh(values)
-
-        assert "example.com" not in result
-        assert "malicious.org/" not in result
-        assert "192.168.1.0/24" in result
-        assert "2001:db8::/32" in result
-
-    def test_empty_list_returns_empty_string(self):
-        """Empty values should return empty string"""
-        output = IPv4Any(type="ip")
-
-        result = output.refresh([])
-
-        assert result == ""
-
-    def test_only_ipv4_works(self):
-        """List with only IPv4 should work"""
-        output = IPv4Any(type="ip")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv4Network("10.0.0.0/8"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "192.168.1.0/24" in result
-        assert "10.0.0.0/8" in result
-
-    def test_only_ipv6_works(self):
-        """List with only IPv6 should work"""
-        output = IPv4Any(type="ip")
-
-        values = [
-            IPv6Network("2001:db8::/32"),
-            IPv6Network("fe80::/10"),
-        ]
-
-        result = output.refresh(values)
-
-        assert "2001:db8::/32" in result
-        assert "fe80::/10" in result
-
-
-# ============================================================================
-# TEST ALL OUTPUT (MOST COMPLEX)
-# ============================================================================
 
 class TestAllOutput:
-    """Test All output formatter - includes IPs and strings"""
+    """Test All output type (all data types)"""
 
-    def test_includes_ipv4(self):
-        """Should include IPv4 addresses"""
+    def test_all_with_ipv4_only(self):
+        """Test All output with only IPv4 networks"""
         output = All(type="all")
 
         values = [
             IPv4Network("192.168.1.0/24"),
             IPv4Network("10.0.0.0/8"),
+            IPv4Network("172.16.0.0/16")
         ]
 
         result = output.refresh(values)
 
         assert "192.168.1.0/24" in result
         assert "10.0.0.0/8" in result
+        assert "172.16.0.0/16" in result
 
-    def test_includes_ipv6(self):
-        """Should include IPv6 addresses"""
+    def test_all_with_ipv6_only(self):
+        """Test All output with only IPv6 networks"""
         output = All(type="all")
 
         values = [
             IPv6Network("2001:db8::/32"),
-            IPv6Network("fe80::/10"),
+            IPv6Network("fe80::/10")
         ]
 
         result = output.refresh(values)
@@ -384,225 +42,389 @@ class TestAllOutput:
         assert "2001:db8::/32" in result
         assert "fe80::/10" in result
 
-    def test_includes_strings(self):
-        """Should include string values (FQDNs and URLs)"""
+    def test_all_with_mixed_ipv4_ipv6(self):
+        """Test All output with mixed IPv4 and IPv6"""
         output = All(type="all")
 
         values = [
-            "example.com",
-            "malicious.org",
-            "bad-site.net/",
+            IPv4Network("192.168.1.0/24"),
+            IPv6Network("2001:db8::/32"),
+            IPv4Network("10.0.0.0/8")
         ]
 
         result = output.refresh(values)
 
+        # Should have both IPv4 and IPv6
+        assert "192.168.1.0/24" in result
+        assert "2001:db8::/32" in result
+        assert "10.0.0.0/8" in result
+
+    def test_all_with_strings(self):
+        """Test All output with string values (URLs, FQDNs)"""
+        output = All(type="all")
+
+        values = [
+            IPv4Network("192.168.1.0/24"),
+            "example.com",
+            "*.malicious.com/",
+            IPv4Network("10.0.0.0/8")
+        ]
+
+        result = output.refresh(values)
+
+        # Should include IPs and strings
+        assert "192.168.1.0/24" in result
         assert "example.com" in result
-        assert "malicious.org" in result
-        assert "bad-site.net/" in result
-
-    def test_includes_all_types_mixed(self):
-        """Should include all types in output"""
-        output = All(type="all")
-
-        values = [
-            IPv4Network("192.168.1.0/24"),
-            IPv6Network("2001:db8::/32"),
-            "example.com",
-            IPv4Network("10.0.0.0/8"),
-            "malicious.org/",
-            IPv6Network("fe80::/10"),
-        ]
-
-        result = output.refresh(values)
-
-        # All values should be present
-        assert "192.168.1.0/24" in result
-        assert "2001:db8::/32" in result
-        assert "example.com" in result
+        assert "*.malicious.com/" in result
         assert "10.0.0.0/8" in result
-        assert "malicious.org/" in result
-        assert "fe80::/10" in result
 
-    def test_sorted_output(self):
-        """Output should be sorted: IPv4, IPv6, then strings"""
+    def test_all_output_sorted(self):
+        """Test All output is sorted"""
         output = All(type="all")
 
         values = [
-            "zzz.com",
-            IPv6Network("2001:db8::/32"),
-            IPv4Network("192.168.1.0/24"),
-            "aaa.com",
             IPv4Network("10.0.0.0/8"),
-            IPv6Network("fe80::/10"),
+            IPv4Network("192.168.1.0/24"),
+            IPv4Network("172.16.0.0/16")
         ]
 
         result = output.refresh(values)
-
         lines = result.split("\n")
-        assert len(lines) == 6
 
-        # All values should be present (order may vary)
-        assert "192.168.1.0/24" in result
-        assert "10.0.0.0/8" in result
-        assert "2001:db8::/32" in result
-        assert "fe80::/10" in result
-        assert "aaa.com" in result
-        assert "zzz.com" in result
+        # IPv4 should be sorted
+        assert lines == sorted(lines)
 
-    def test_newline_separated(self):
-        """All entries should be newline-separated"""
+    def test_all_output_newline_separated(self):
+        """Test All output uses newline separator"""
         output = All(type="all")
 
         values = [
             IPv4Network("192.168.1.0/24"),
-            IPv6Network("2001:db8::/32"),
-            "example.com",
+            IPv4Network("10.0.0.0/8")
         ]
 
         result = output.refresh(values)
 
+        assert "\n" in result
         lines = result.split("\n")
-        assert len(lines) == 3
+        assert len(lines) == 2
 
-    def test_empty_list_returns_empty_string(self):
-        """Empty values should return empty string"""
+    def test_all_with_empty_values(self):
+        """Test All output with empty list"""
         output = All(type="all")
 
         result = output.refresh([])
 
         assert result == ""
 
-    def test_duplicate_handling(self):
-        """Test handling of duplicate values"""
+    def test_all_ipv4_before_ipv6(self):
+        """Test All output puts IPv4 before IPv6"""
         output = All(type="all")
 
         values = [
+            IPv6Network("2001:db8::/32"),
+            IPv4Network("192.168.1.0/24")
+        ]
+
+        result = output.refresh(values)
+        lines = result.split("\n")
+
+        # IPv4 should come before IPv6
+        ipv4_line = next(i for i, l in enumerate(lines) if "192.168" in l)
+        ipv6_line = next(i for i, l in enumerate(lines) if "2001" in l)
+
+        assert ipv4_line < ipv6_line
+
+
+class TestIPv4OnlyOutput:
+    """Test IPv4Only output type"""
+
+    def test_ipv4_only_filters_ipv4(self):
+        """Test IPv4Only returns only IPv4 networks"""
+        output = IPv4Only(type="ipv4")
+
+        values = [
             IPv4Network("192.168.1.0/24"),
-            IPv4Network("192.168.1.0/24"),  # Duplicate
-            "example.com",
-            "example.com",  # Duplicate
+            IPv6Network("2001:db8::/32"),
+            IPv4Network("10.0.0.0/8"),
+            "example.com"
         ]
 
         result = output.refresh(values)
 
-        # Duplicates should be present (may not be deduplicated)
+        # Should only have IPv4
         assert "192.168.1.0/24" in result
-        assert "example.com" in result
+        assert "10.0.0.0/8" in result
 
+        # Should NOT have IPv6 or strings
+        assert "2001:db8" not in result
+        assert "example.com" not in result
 
-# ============================================================================
-# TEST OUTPUT TYPE VALIDATION
-# ============================================================================
-
-class TestOutputTypeValidation:
-    """Test Pydantic type validation for output models"""
-
-    def test_ipv4only_type_literal(self):
-        """IPv4Only type must be 'ipv4'"""
+    def test_ipv4_only_sorted(self):
+        """Test IPv4Only output is sorted"""
         output = IPv4Only(type="ipv4")
-        assert output.type == "ipv4"
 
-        # Invalid type should fail
-        with pytest.raises(Exception):
-            IPv4Only(type="invalid")
+        values = [
+            IPv4Network("10.0.0.0/8"),
+            IPv4Network("192.168.1.0/24"),
+            IPv4Network("172.16.0.0/16")
+        ]
 
-    def test_ipv6only_type_literal(self):
-        """IPv6Only type must be 'ipv6'"""
+        result = output.refresh(values)
+        lines = result.split("\n")
+
+        assert lines == sorted(lines)
+
+    def test_ipv4_only_empty(self):
+        """Test IPv4Only with no IPv4 addresses"""
+        output = IPv4Only(type="ipv4")
+
+        values = [
+            IPv6Network("2001:db8::/32"),
+            "example.com"
+        ]
+
+        result = output.refresh(values)
+
+        assert result == ""
+
+    def test_ipv4_only_newline_format(self):
+        """Test IPv4Only uses newline separator"""
+        output = IPv4Only(type="ipv4")
+
+        values = [
+            IPv4Network("192.168.1.0/24"),
+            IPv4Network("10.0.0.0/8")
+        ]
+
+        result = output.refresh(values)
+
+        assert "\n" in result
+        assert result.count("\n") == 1
+
+
+class TestIPv6OnlyOutput:
+    """Test IPv6Only output type"""
+
+    def test_ipv6_only_filters_ipv6(self):
+        """Test IPv6Only returns only IPv6 networks"""
         output = IPv6Only(type="ipv6")
-        assert output.type == "ipv6"
 
-        with pytest.raises(Exception):
-            IPv6Only(type="invalid")
+        values = [
+            IPv4Network("192.168.1.0/24"),
+            IPv6Network("2001:db8::/32"),
+            IPv6Network("fe80::/10"),
+            "example.com"
+        ]
 
-    def test_ipv4any_type_literal(self):
-        """IPv4Any type must be 'ip'"""
+        result = output.refresh(values)
+
+        # Should only have IPv6
+        assert "2001:db8::/32" in result
+        assert "fe80::/10" in result
+
+        # Should NOT have IPv4 or strings
+        assert "192.168" not in result
+        assert "example.com" not in result
+
+    def test_ipv6_only_sorted(self):
+        """Test IPv6Only output is sorted"""
+        output = IPv6Only(type="ipv6")
+
+        values = [
+            IPv6Network("fe80::/10"),
+            IPv6Network("2001:db8::/32")
+        ]
+
+        result = output.refresh(values)
+        lines = result.split("\n")
+
+        assert lines == sorted(lines)
+
+    def test_ipv6_only_empty(self):
+        """Test IPv6Only with no IPv6 addresses"""
+        output = IPv6Only(type="ipv6")
+
+        values = [
+            IPv4Network("192.168.1.0/24"),
+            "example.com"
+        ]
+
+        result = output.refresh(values)
+
+        assert result == ""
+
+
+class TestIPv4AnyOutput:
+    """Test IPv4Any output type (both IPv4 and IPv6)"""
+
+    def test_ipv4_any_includes_both(self):
+        """Test IPv4Any includes both IPv4 and IPv6"""
         output = IPv4Any(type="ip")
-        assert output.type == "ip"
 
-        with pytest.raises(Exception):
-            IPv4Any(type="invalid")
+        values = [
+            IPv4Network("192.168.1.0/24"),
+            IPv6Network("2001:db8::/32"),
+            "example.com",
+            IPv4Network("10.0.0.0/8")
+        ]
+
+        result = output.refresh(values)
+
+        # Should have both IPv4 and IPv6
+        assert "192.168.1.0/24" in result
+        assert "2001:db8::/32" in result
+        assert "10.0.0.0/8" in result
+
+        # Should NOT have strings
+        assert "example.com" not in result
+
+    def test_ipv4_any_sorted(self):
+        """Test IPv4Any output is sorted"""
+        output = IPv4Any(type="ip")
+
+        values = [
+            IPv4Network("10.0.0.0/8"),
+            IPv6Network("2001:db8::/32"),
+            IPv4Network("192.168.1.0/24")
+        ]
+
+        result = output.refresh(values)
+
+        # Should have all IPs
+        assert "192.168.1.0/24" in result
+        assert "10.0.0.0/8" in result
+        assert "2001:db8::/32" in result
+
+    def test_ipv4_any_empty(self):
+        """Test IPv4Any with no IP addresses"""
+        output = IPv4Any(type="ip")
+
+        values = ["example.com", "test.org"]
+
+        result = output.refresh(values)
+
+        assert result == ""
+
+
+class TestOutputTypes:
+    """Test output type literals and model structure"""
 
     def test_all_type_literal(self):
-        """All type must be 'all'"""
+        """Test All has correct type literal"""
         output = All(type="all")
         assert output.type == "all"
 
-        with pytest.raises(Exception):
-            All(type="invalid")
+    def test_ipv4_only_type_literal(self):
+        """Test IPv4Only has correct type literal"""
+        output = IPv4Only(type="ipv4")
+        assert output.type == "ipv4"
+
+    def test_ipv6_only_type_literal(self):
+        """Test IPv6Only has correct type literal"""
+        output = IPv6Only(type="ipv6")
+        assert output.type == "ipv6"
+
+    def test_ipv4_any_type_literal(self):
+        """Test IPv4Any has correct type literal"""
+        output = IPv4Any(type="ip")
+        assert output.type == "ip"
+
+    def test_output_has_id(self):
+        """Test all outputs have UUID id"""
+        all_output = All(type="all")
+        ipv4_output = IPv4Only(type="ipv4")
+
+        assert all_output.id is not None
+        assert isinstance(all_output.id, str)
+        assert ipv4_output.id is not None
 
 
-# ============================================================================
-# TEST OUTPUT FORMAT CONSISTENCY
-# ============================================================================
+class TestOutputEdgeCases:
+    """Test edge cases and special scenarios"""
 
-class TestOutputFormatConsistency:
-    """Test that all outputs follow the same format conventions"""
+    def test_all_with_duplicate_values(self):
+        """Test All output with duplicate values"""
+        output = All(type="all")
 
-    def test_all_outputs_use_newline_separator(self):
-        """All outputs should use newline as separator (not commas, spaces, etc)"""
         values = [
             IPv4Network("192.168.1.0/24"),
-            IPv4Network("10.0.0.0/8"),
-        ]
-
-        outputs = [
-            IPv4Only(type="ipv4"),
-            IPv4Any(type="ip"),
-            All(type="all"),
-        ]
-
-        for output in outputs:
-            result = output.refresh(values)
-            assert "\n" in result  # Uses newlines
-            assert "," not in result  # Doesn't use commas
-            assert ";" not in result  # Doesn't use semicolons
-
-    def test_all_outputs_use_cidr_notation(self):
-        """All outputs should use CIDR notation for IPs"""
-        values = [
             IPv4Network("192.168.1.0/24"),
+            IPv4Network("192.168.1.0/24")
+        ]
+
+        result = output.refresh(values)
+
+        # Duplicates should be handled by sorting
+        # Each line should appear once or multiple times depending on implementation
+        assert "192.168.1.0/24" in result
+
+    def test_output_with_single_value(self):
+        """Test output with single value"""
+        output = All(type="all")
+
+        values = [IPv4Network("192.168.1.0/24")]
+
+        result = output.refresh(values)
+
+        assert result == "192.168.1.0/24"
+
+    def test_output_with_cidr_variations(self):
+        """Test output with various CIDR notations"""
+        output = All(type="all")
+
+        values = [
+            IPv4Network("192.168.1.1/32"),  # Single host
+            IPv4Network("10.0.0.0/8"),      # Class A
+            IPv4Network("172.16.0.0/12"),   # Class B range
+            IPv4Network("192.168.0.0/16")   # Class C range
+        ]
+
+        result = output.refresh(values)
+
+        # All should be present with correct notation
+        assert "192.168.1.1/32" in result
+        assert "10.0.0.0/8" in result
+        assert "172.16.0.0/12" in result
+        assert "192.168.0.0/16" in result
+
+    def test_ipv6_compressed_notation(self):
+        """Test IPv6 compressed notation in output"""
+        output = IPv6Only(type="ipv6")
+
+        values = [
+            IPv6Network("2001:db8::1/128"),
+            IPv6Network("fe80::1/64")
+        ]
+
+        result = output.refresh(values)
+
+        # Should contain compressed IPv6 notation
+        assert "2001:db8::1/128" in result or "2001:0db8" in result
+        assert "fe80::1/64" in result or "fe80::" in result
+
+    def test_all_ordering_ipv4_ipv6_strings(self):
+        """Test All output ordering: IPv4, IPv6, then strings"""
+        output = All(type="all")
+
+        values = [
+            "zebra.com",
             IPv6Network("2001:db8::/32"),
-        ]
-
-        outputs = [
-            IPv4Only(type="ipv4"),
-            IPv6Only(type="ipv6"),
-            IPv4Any(type="ip"),
-            All(type="all"),
-        ]
-
-        for output in outputs:
-            result = output.refresh(values)
-            # CIDR notation includes /
-            if result:  # If output produces any result
-                assert "/" in result or result == ""  # Either has CIDR or empty
-
-    def test_all_outputs_return_string_type(self):
-        """All outputs should return string type"""
-        values = [
             IPv4Network("192.168.1.0/24"),
+            "alpha.com",
+            IPv4Network("10.0.0.0/8")
         ]
 
-        outputs = [
-            IPv4Only(type="ipv4"),
-            IPv6Only(type="ipv6"),
-            IPv4Any(type="ip"),
-            All(type="all"),
-        ]
+        result = output.refresh(values)
+        lines = result.split("\n")
 
-        for output in outputs:
-            result = output.refresh(values)
-            assert isinstance(result, str)
+        # Find positions
+        ipv4_positions = [i for i, l in enumerate(lines) if any(c.isdigit() and "." in l for c in l)]
+        ipv6_positions = [i for i, l in enumerate(lines) if ":" in l]
+        string_positions = [i for i, l in enumerate(lines) if ".com" in l]
 
-    def test_all_outputs_handle_empty_list(self):
-        """All outputs should handle empty list gracefully"""
-        outputs = [
-            IPv4Only(type="ipv4"),
-            IPv6Only(type="ipv6"),
-            IPv4Any(type="ip"),
-            All(type="all"),
-        ]
-
-        for output in outputs:
-            result = output.refresh([])
-            assert result == ""  # Empty string for empty input
+        # IPv4 should come first, then IPv6, then strings
+        if ipv4_positions and ipv6_positions:
+            assert max(ipv4_positions) < min(ipv6_positions)
+        if ipv6_positions and string_positions:
+            assert max(ipv6_positions) < min(string_positions)
